@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class VpnWidgetProvider : AppWidgetProvider() {
+class VpnWidgetCompactProvider : AppWidgetProvider() {
 
     @Inject
     lateinit var connectionManager: VpnConnectionManager
@@ -48,7 +48,7 @@ class VpnWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
 
-        if (intent.action == ACTION_TOGGLE_VPN) {
+        if (intent.action == ACTION_TOGGLE_VPN_COMPACT) {
             handleToggle(context)
         }
     }
@@ -72,7 +72,6 @@ class VpnWidgetProvider : AppWidgetProvider() {
 
                     val vpnIntent = VpnService.prepare(context)
                     if (vpnIntent != null) {
-                        // Need VPN permission — open the app
                         val appIntent = Intent(context, MainActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
@@ -90,11 +89,11 @@ class VpnWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        const val ACTION_TOGGLE_VPN = "app.slipnet.widget.TOGGLE_VPN"
+        const val ACTION_TOGGLE_VPN_COMPACT = "app.slipnet.widget.TOGGLE_VPN_COMPACT"
 
         fun notifyStateChanged(context: Context, state: ConnectionState) {
             val appWidgetManager = AppWidgetManager.getInstance(context) ?: return
-            val componentName = ComponentName(context, VpnWidgetProvider::class.java)
+            val componentName = ComponentName(context, VpnWidgetCompactProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
 
             if (appWidgetIds.isEmpty()) return
@@ -106,66 +105,44 @@ class VpnWidgetProvider : AppWidgetProvider() {
         }
 
         private fun buildRemoteViews(context: Context, state: ConnectionState): RemoteViews {
-            val views = RemoteViews(context.packageName, R.layout.widget_vpn_toggle)
+            val views = RemoteViews(context.packageName, R.layout.widget_vpn_compact)
 
             // Set tap action
-            val toggleIntent = Intent(context, VpnWidgetProvider::class.java).apply {
-                action = ACTION_TOGGLE_VPN
+            val toggleIntent = Intent(context, VpnWidgetCompactProvider::class.java).apply {
+                action = ACTION_TOGGLE_VPN_COMPACT
             }
             val pendingIntent = PendingIntent.getBroadcast(
-                context, 0, toggleIntent,
+                context, 1, toggleIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
+            views.setOnClickPendingIntent(R.id.widget_compact_root, pendingIntent)
 
             // Update UI based on state
             when (state) {
                 is ConnectionState.Disconnected -> {
-                    views.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_bg_disconnected)
-                    views.setTextViewText(R.id.widget_status_text, "Disconnected")
-                    views.setTextColor(R.id.widget_status_text, 0xFF333333.toInt())
-                    views.setInt(R.id.widget_status_icon, "setColorFilter", 0xFF333333.toInt())
-                    views.setInt(R.id.widget_icon_badge, "setBackgroundResource", R.drawable.widget_icon_circle_dark)
-                    views.setViewVisibility(R.id.widget_profile_name, View.GONE)
-                    views.setViewVisibility(R.id.widget_progress, View.GONE)
+                    views.setInt(R.id.widget_compact_root, "setBackgroundResource", R.drawable.widget_compact_bg_disconnected)
+                    views.setInt(R.id.widget_compact_icon, "setColorFilter", 0xFF333333.toInt())
+                    views.setViewVisibility(R.id.widget_compact_progress, View.GONE)
                 }
                 is ConnectionState.Connecting -> {
-                    views.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_bg_connecting)
-                    views.setTextViewText(R.id.widget_status_text, "Connecting...")
-                    views.setTextColor(R.id.widget_status_text, 0xFFFFFFFF.toInt())
-                    views.setInt(R.id.widget_status_icon, "setColorFilter", 0xFFFFFFFF.toInt())
-                    views.setInt(R.id.widget_icon_badge, "setBackgroundResource", R.drawable.widget_icon_circle)
-                    views.setViewVisibility(R.id.widget_profile_name, View.GONE)
-                    views.setViewVisibility(R.id.widget_progress, View.VISIBLE)
+                    views.setInt(R.id.widget_compact_root, "setBackgroundResource", R.drawable.widget_compact_bg_connecting)
+                    views.setInt(R.id.widget_compact_icon, "setColorFilter", 0xFFFFFFFF.toInt())
+                    views.setViewVisibility(R.id.widget_compact_progress, View.VISIBLE)
                 }
                 is ConnectionState.Connected -> {
-                    views.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_bg_connected)
-                    views.setTextViewText(R.id.widget_status_text, "Connected")
-                    views.setTextColor(R.id.widget_status_text, 0xFFFFFFFF.toInt())
-                    views.setTextColor(R.id.widget_profile_name, 0xB3FFFFFF.toInt())
-                    views.setInt(R.id.widget_status_icon, "setColorFilter", 0xFFFFFFFF.toInt())
-                    views.setInt(R.id.widget_icon_badge, "setBackgroundResource", R.drawable.widget_icon_circle)
-                    views.setTextViewText(R.id.widget_profile_name, state.profile.name)
-                    views.setViewVisibility(R.id.widget_profile_name, View.VISIBLE)
-                    views.setViewVisibility(R.id.widget_progress, View.GONE)
+                    views.setInt(R.id.widget_compact_root, "setBackgroundResource", R.drawable.widget_compact_bg_connected)
+                    views.setInt(R.id.widget_compact_icon, "setColorFilter", 0xFFFFFFFF.toInt())
+                    views.setViewVisibility(R.id.widget_compact_progress, View.GONE)
                 }
                 is ConnectionState.Disconnecting -> {
-                    views.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_bg_disconnected)
-                    views.setTextViewText(R.id.widget_status_text, "Disconnecting...")
-                    views.setTextColor(R.id.widget_status_text, 0xFF333333.toInt())
-                    views.setInt(R.id.widget_status_icon, "setColorFilter", 0xFF333333.toInt())
-                    views.setInt(R.id.widget_icon_badge, "setBackgroundResource", R.drawable.widget_icon_circle_dark)
-                    views.setViewVisibility(R.id.widget_profile_name, View.GONE)
-                    views.setViewVisibility(R.id.widget_progress, View.VISIBLE)
+                    views.setInt(R.id.widget_compact_root, "setBackgroundResource", R.drawable.widget_compact_bg_disconnected)
+                    views.setInt(R.id.widget_compact_icon, "setColorFilter", 0xFF333333.toInt())
+                    views.setViewVisibility(R.id.widget_compact_progress, View.VISIBLE)
                 }
                 is ConnectionState.Error -> {
-                    views.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_bg_error)
-                    views.setTextViewText(R.id.widget_status_text, "Error")
-                    views.setTextColor(R.id.widget_status_text, 0xFFFFFFFF.toInt())
-                    views.setInt(R.id.widget_status_icon, "setColorFilter", 0xFFFFFFFF.toInt())
-                    views.setInt(R.id.widget_icon_badge, "setBackgroundResource", R.drawable.widget_icon_circle)
-                    views.setViewVisibility(R.id.widget_profile_name, View.GONE)
-                    views.setViewVisibility(R.id.widget_progress, View.GONE)
+                    views.setInt(R.id.widget_compact_root, "setBackgroundResource", R.drawable.widget_compact_bg_error)
+                    views.setInt(R.id.widget_compact_icon, "setColorFilter", 0xFFFFFFFF.toInt())
+                    views.setViewVisibility(R.id.widget_compact_progress, View.GONE)
                 }
             }
 
