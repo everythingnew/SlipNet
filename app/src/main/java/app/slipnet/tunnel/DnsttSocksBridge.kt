@@ -2,11 +2,8 @@ package app.slipnet.tunnel
 
 import app.slipnet.util.AppLog as Log
 import java.io.BufferedOutputStream
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
-import java.io.SequenceInputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -19,55 +16,53 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
 /**
- * SOCKS5 bridge for Slipstream non-SSH mode.
+ * SOCKS5 bridge for DNSTT standalone mode.
  *
- * Slipstream tunnels raw TCP to the remote server. The SOCKS5 handshake goes
+ * DNSTT tunnels raw TCP to the remote server. The SOCKS5 handshake goes
  * through to the remote Dante proxy which requires user/pass auth and only
  * supports CONNECT (0x01), NOT FWD_UDP (0x05). This bridge sits between
- * hev-socks5-tunnel and Slipstream:
+ * hev-socks5-tunnel and DNSTT:
  *
- * - CONNECT (0x01): Chains to Slipstream → Dante (with user/pass auth)
+ * - CONNECT (0x01): Chains to DNSTT → Dante (with user/pass auth)
  * - FWD_UDP (0x05) DNS: DNS-over-TCP through persistent worker pool via Dante,
  *   falls back to DoH (Cloudflare 1.1.1.1) if all workers fail.
  * - FWD_UDP (0x05) non-DNS: Dropped silently (browser falls back to TCP CONNECT)
  *
  * Traffic flow:
- * App -> TUN -> hev-socks5-tunnel -> SlipstreamSocksBridge (proxyPort+1)
- *   TCP: -> SOCKS5 CONNECT (with auth) -> Slipstream (proxyPort) -> Dante -> Server
+ * App -> TUN -> hev-socks5-tunnel -> DnsttSocksBridge (proxyPort)
+ *   TCP: -> SOCKS5 CONNECT (with auth) -> DNSTT (proxyPort+1) -> Dante -> Server
  *   DNS: -> FWD_UDP -> persistent DNS worker pool (via Dante) -> DNS server
  */
-object SlipstreamSocksBridge {
-    private const val TAG = "SlipstreamSocksBridge"
+object DnsttSocksBridge {
+    private const val TAG = "DnsttSocksBridge"
     @Volatile var debugLogging = false
-    @Volatile var domainRouter: DomainRouter = DomainRouter.DISABLED
     private fun logd(msg: String) { if (debugLogging) Log.d(TAG, msg) }
     private const val BIND_MAX_RETRIES = 10
     private const val BIND_RETRY_DELAY_MS = 200L
-    private const val BUFFER_SIZE = 65536  // 64KB for better throughput (was 32KB)
+    private const val BUFFER_SIZE = 65536  // 64KB for better throughput
     private const val TCP_CONNECT_TIMEOUT_MS = 10000
     private const val DNS_POOL_SIZE = 10
     private const val DNS_KEEPALIVE_INTERVAL_MS = 20_000L
     private const val DNS_WORKER_TIMEOUT_MS = 15_000
     // Clean DNS resolved at the REMOTE server (through Dante SOCKS5 CONNECT).
-    // Unlike SSH (direct-tcpip bypasses Dante), Slipstream goes through Dante which
-    // may block or mangle CONNECT to localhost (127.0.0.53). Use public DNS instead.
+    // Dante may block CONNECT to localhost (127.0.0.53). Use public DNS instead.
     private const val PRIMARY_DNS_HOST = "1.1.1.1"
     // Fallback if primary is unreachable through Dante
     private const val FALLBACK_DNS_HOST = "8.8.8.8"
 
-    private var slipstreamHost: String = "127.0.0.1"
-    private var slipstreamPort: Int = 0
+    private var dnsttHost: String = "127.0.0.1"
+    private var dnsttPort: Int = 0
     private var socksUsername: String? = null
     private var socksPassword: String? = null
     private var serverSocket: ServerSocket? = null
     private var acceptorThread: Thread? = null
     private val running = AtomicBoolean(false)
     private val connectionThreads = CopyOnWriteArrayList<Thread>()
-    // Track all remote sockets (connections to Slipstream) for explicit cleanup
+    // Track all remote sockets (connections to DNSTT) for explicit cleanup
     private val remoteSockets = CopyOnWriteArrayList<Socket>()
 
     // --- DNS Worker Pool ---
-    // Persistent SOCKS5 connections through Slipstream→Dante to DNS server.
+    // Persistent SOCKS5 connections through DNSTT→Dante to DNS server.
     // Each worker holds an open TCP connection to the DNS server (via SOCKS5 CONNECT),
     // allowing DNS-over-TCP queries without per-query connection overhead (~4 RTTs saved).
     private class DnsWorker(
@@ -86,27 +81,26 @@ object SlipstreamSocksBridge {
     private var dnsKeepaliveThread: Thread? = null
 
     fun start(
-        slipstreamPort: Int,
-        slipstreamHost: String = "127.0.0.1",
+        dnsttPort: Int,
+        dnsttHost: String = "127.0.0.1",
         listenPort: Int,
         listenHost: String = "127.0.0.1",
         socksUsername: String? = null,
-        socksPassword: String? = null,
-        dnsServer: String? = null
+        socksPassword: String? = null
     ): Result<Unit> {
         Log.i(TAG, "========================================")
-        Log.i(TAG, "Starting Slipstream SOCKS5 bridge")
-        Log.i(TAG, "  Slipstream: $slipstreamHost:$slipstreamPort")
+        Log.i(TAG, "Starting DNSTT SOCKS5 bridge")
+        Log.i(TAG, "  DNSTT: $dnsttHost:$dnsttPort")
         Log.i(TAG, "  Listen: $listenHost:$listenPort")
-        Log.i(TAG, "  DNS: ${dnsServer ?: PRIMARY_DNS_HOST} (fallback: $FALLBACK_DNS_HOST)")
+        Log.i(TAG, "  DNS: $PRIMARY_DNS_HOST (fallback: $FALLBACK_DNS_HOST)")
         Log.i(TAG, "========================================")
 
         stop()
-        this.slipstreamHost = slipstreamHost
-        this.slipstreamPort = slipstreamPort
+        this.dnsttHost = dnsttHost
+        this.dnsttPort = dnsttPort
         this.socksUsername = socksUsername
         this.socksPassword = socksPassword
-        this.dnsTargetHost = dnsServer ?: PRIMARY_DNS_HOST
+        this.dnsTargetHost = PRIMARY_DNS_HOST
 
         return try {
             val ss = bindServerSocket(listenHost, listenPort)
@@ -126,7 +120,7 @@ object SlipstreamSocksBridge {
                     }
                 }
                 logd("Acceptor thread exited")
-            }, "slip-bridge-acceptor").also { it.isDaemon = true; it.start() }
+            }, "dnstt-bridge-acceptor").also { it.isDaemon = true; it.start() }
 
             // Pre-warm DNS worker pool in background
             prewarmDnsWorkers()
@@ -156,7 +150,7 @@ object SlipstreamSocksBridge {
         dnsKeepaliveThread?.interrupt()
         dnsKeepaliveThread = null
 
-        // Close all DNS workers (connections to Slipstream port)
+        // Close all DNS workers (connections to DNSTT port)
         for (i in 0 until DNS_POOL_SIZE) {
             val worker = dnsWorkers[i]
             dnsWorkers[i] = null
@@ -165,7 +159,7 @@ object SlipstreamSocksBridge {
             }
         }
 
-        // Close all remote sockets (CONNECT chains to Slipstream port)
+        // Close all remote sockets (CONNECT chains to DNSTT port)
         for (sock in remoteSockets) {
             try { sock.close() } catch (_: Exception) {}
         }
@@ -190,7 +184,7 @@ object SlipstreamSocksBridge {
 
     /**
      * Pre-warm DNS worker pool: open persistent SOCKS5 connections to the DNS server
-     * through Slipstream→Dante. Each worker is a ready-to-use DNS-over-TCP channel.
+     * through DNSTT→Dante. Each worker is a ready-to-use DNS-over-TCP channel.
      */
     private fun prewarmDnsWorkers() {
         Log.i(TAG, "DNS workers target: $dnsTargetHost:53 (fallback: $FALLBACK_DNS_HOST, pool=$DNS_POOL_SIZE)")
@@ -229,20 +223,20 @@ object SlipstreamSocksBridge {
             }
             val count = dnsWorkers.count { it != null }
             Log.i(TAG, "DNS worker pool: $count/$DNS_POOL_SIZE ready → $dnsTargetHost:53")
-        }, "slip-dns-prewarm")
+        }, "dnstt-dns-prewarm")
         thread.isDaemon = true
         thread.start()
         startDnsKeepalive()
     }
 
     /**
-     * Create a single DNS worker: Socket → Slipstream → SOCKS5 auth → CONNECT to DNS:53.
+     * Create a single DNS worker: Socket → DNSTT → SOCKS5 auth → CONNECT to DNS:53.
      * Returns a ready-to-use DnsWorker, or null on failure.
      */
     private fun createDnsWorker(): DnsWorker? {
         val sock = Socket()
         try {
-            sock.connect(InetSocketAddress(slipstreamHost, slipstreamPort), TCP_CONNECT_TIMEOUT_MS)
+            sock.connect(InetSocketAddress(dnsttHost, dnsttPort), TCP_CONNECT_TIMEOUT_MS)
             sock.soTimeout = DNS_WORKER_TIMEOUT_MS
             sock.tcpNoDelay = true
 
@@ -331,7 +325,7 @@ object SlipstreamSocksBridge {
                     Thread.sleep(DNS_KEEPALIVE_INTERVAL_MS)
                 } catch (_: InterruptedException) { break }
             }
-        }, "slip-dns-keepalive").also { it.isDaemon = true; it.start() }
+        }, "dnstt-dns-keepalive").also { it.isDaemon = true; it.start() }
     }
 
     /**
@@ -377,7 +371,7 @@ object SlipstreamSocksBridge {
      *
      * Phase 1: Try ALL existing live workers round-robin (non-blocking lock).
      * Phase 2: If all dead/busy, recreate ONE worker inline and use it.
-     * Phase 3: Last resort — open a per-query connection (still through Slipstream).
+     * Phase 3: Last resort — open a per-query connection (still through DNSTT).
      * Phase 4: DoH fallback if all TCP methods fail.
      */
     private fun forwardDnsPooled(payload: ByteArray): ByteArray? {
@@ -534,7 +528,7 @@ object SlipstreamSocksBridge {
                         return@Thread
                     }
 
-                    // Handle CONNECT (cmd 0x01) — chain through Slipstream
+                    // Handle CONNECT (cmd 0x01) — chain through DNSTT
                     handleConnect(destHost, destPort, rawAddr, portBytes, socket, input, output)
                 }
             } catch (e: Exception) {
@@ -542,7 +536,7 @@ object SlipstreamSocksBridge {
                     logd("Connection handler error: ${e.message}")
                 }
             }
-        }, "slip-bridge-handler")
+        }, "dnstt-bridge-handler")
         thread.isDaemon = true
         connectionThreads.add(thread)
         thread.start()
@@ -551,8 +545,7 @@ object SlipstreamSocksBridge {
     }
 
     /**
-     * Handle SOCKS5 CONNECT by chaining through Slipstream's SOCKS5 proxy.
-     * With domain routing: sniffs TLS SNI / HTTP Host to decide bypass vs tunnel.
+     * Handle SOCKS5 CONNECT by chaining through DNSTT's raw tunnel to Dante.
      */
     private fun handleConnect(
         destHost: String,
@@ -563,107 +556,16 @@ object SlipstreamSocksBridge {
         clientInput: InputStream,
         clientOutput: OutputStream
     ) {
-        val router = domainRouter
-        if (router.enabled) {
-            handleConnectWithRouting(router, destHost, destPort, rawAddr, portBytes, clientSocket, clientInput, clientOutput)
-            return
-        }
-
-        // Original flow — no domain routing
-        connectViaSlipstream(destHost, destPort, rawAddr, portBytes, clientSocket, clientInput, clientOutput, true)
-    }
-
-    private fun handleConnectWithRouting(
-        router: DomainRouter,
-        destHost: String,
-        destPort: Int,
-        rawAddr: ByteArray,
-        portBytes: ByteArray,
-        clientSocket: Socket,
-        clientInput: InputStream,
-        clientOutput: OutputStream
-    ) {
-        var effectiveHost = destHost
-        var sniffBuffer: ByteArray? = null
-        var sniffLen = 0
-        var wasEarlyReply = false
-
-        if (DomainRouter.isIpAddress(destHost)) {
-            // IP address — sniff to recover domain
-            clientOutput.write(byteArrayOf(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-            clientOutput.flush()
-            clientSocket.soTimeout = 3000
-            wasEarlyReply = true
-
-            val result = ProtocolSniffer.sniff(clientInput)
-            if (result.domain != null) {
-                effectiveHost = result.domain
-                logd("CONNECT: sniffed domain=$effectiveHost from IP=$destHost")
-            }
-            sniffBuffer = result.bufferedData
-            sniffLen = result.bufferedLength
-        }
-
-        if (router.shouldBypass(effectiveHost)) {
-            // Direct connection — bypass tunnel
-            logd("CONNECT: bypassing tunnel for $effectiveHost:$destPort")
-            try {
-                val directSocket = router.createDirectConnection(destHost, destPort)
-                if (!wasEarlyReply) {
-                    clientOutput.write(byteArrayOf(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-                    clientOutput.flush()
-                }
-                clientSocket.soTimeout = 0
-                val effectiveInput = if (sniffLen > 0)
-                    SequenceInputStream(ByteArrayInputStream(sniffBuffer!!, 0, sniffLen), clientInput)
-                else clientInput
-                bridgeDirect(effectiveInput, clientOutput, directSocket)
-            } catch (e: Exception) {
-                logd("CONNECT: direct connection failed for $effectiveHost:$destPort: ${e.message}")
-                if (!wasEarlyReply) {
-                    try {
-                        clientOutput.write(byteArrayOf(0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-                        clientOutput.flush()
-                    } catch (_: Exception) {}
-                }
-            }
-            return
-        }
-
-        // Tunnel path
-        clientSocket.soTimeout = 0
-        val effectiveInput = if (sniffLen > 0)
-            SequenceInputStream(ByteArrayInputStream(sniffBuffer!!, 0, sniffLen), clientInput)
-        else clientInput
-        connectViaSlipstream(destHost, destPort, rawAddr, portBytes, clientSocket, effectiveInput, clientOutput, !wasEarlyReply)
-    }
-
-    /**
-     * Connect through Slipstream's SOCKS5 proxy and bridge bidirectionally.
-     * If [sendReply] is true, sends SOCKS5 success reply to client after upstream connects.
-     */
-    private fun connectViaSlipstream(
-        destHost: String,
-        destPort: Int,
-        rawAddr: ByteArray,
-        portBytes: ByteArray,
-        clientSocket: Socket,
-        clientInput: InputStream,
-        clientOutput: OutputStream,
-        sendReply: Boolean
-    ) {
         val remoteSocket: Socket
         try {
             remoteSocket = Socket()
-            remoteSocket.connect(InetSocketAddress(slipstreamHost, slipstreamPort), TCP_CONNECT_TIMEOUT_MS)
+            remoteSocket.connect(InetSocketAddress(dnsttHost, dnsttPort), TCP_CONNECT_TIMEOUT_MS)
             remoteSocket.tcpNoDelay = true
             remoteSockets.add(remoteSocket)
         } catch (e: Exception) {
-            logd("CONNECT: failed to connect to Slipstream: ${e.message}")
-            if (sendReply) {
-                clientOutput.write(byteArrayOf(0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-                clientOutput.flush()
-            }
+            logd("CONNECT: failed to connect to DNSTT: ${e.message}")
+            clientOutput.write(byteArrayOf(0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
+            clientOutput.flush()
             return
         }
 
@@ -671,55 +573,16 @@ object SlipstreamSocksBridge {
             val remoteInput = remoteSocket.getInputStream()
             val remoteOutput = remoteSocket.getOutputStream()
 
-            // SOCKS5 greeting to Slipstream → Dante (user/pass auth)
-            val hasAuth = !socksUsername.isNullOrBlank() && !socksPassword.isNullOrBlank()
-            if (hasAuth) {
-                remoteOutput.write(byteArrayOf(0x05, 0x01, 0x02))
-            } else {
-                remoteOutput.write(byteArrayOf(0x05, 0x01, 0x00))
-            }
-            remoteOutput.flush()
-
-            val greetResp = ByteArray(2)
-            remoteInput.readFully(greetResp)
-            val selectedMethod = greetResp[1].toInt() and 0xFF
-            if (greetResp[0] != 0x05.toByte() || selectedMethod == 0xFF) {
-                Log.w(TAG, "CONNECT: Slipstream rejected greeting (${greetResp[0]}, ${greetResp[1]})")
-                if (sendReply) {
-                    clientOutput.write(byteArrayOf(0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-                    clientOutput.flush()
-                }
+            // SOCKS5 greeting to DNSTT → Dante (user/pass auth)
+            if (!performSocksAuth(remoteInput, remoteOutput)) {
+                Log.w(TAG, "CONNECT: Dante auth failed")
+                clientOutput.write(byteArrayOf(0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
+                clientOutput.flush()
                 remoteSocket.close()
                 return
             }
 
-            // Perform user/pass auth sub-negotiation if server selected method 0x02
-            if (selectedMethod == 0x02) {
-                val user = socksUsername!!.toByteArray()
-                val pass = socksPassword!!.toByteArray()
-                val authReq = ByteArray(3 + user.size + pass.size)
-                authReq[0] = 0x01
-                authReq[1] = user.size.toByte()
-                System.arraycopy(user, 0, authReq, 2, user.size)
-                authReq[2 + user.size] = pass.size.toByte()
-                System.arraycopy(pass, 0, authReq, 3 + user.size, pass.size)
-                remoteOutput.write(authReq)
-                remoteOutput.flush()
-
-                val authResp = ByteArray(2)
-                remoteInput.readFully(authResp)
-                if (authResp[1] != 0x00.toByte()) {
-                    Log.w(TAG, "CONNECT: Dante auth failed (status=${authResp[1]})")
-                    if (sendReply) {
-                        clientOutput.write(byteArrayOf(0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-                        clientOutput.flush()
-                    }
-                    remoteSocket.close()
-                    return
-                }
-            }
-
-            // SOCKS5 CONNECT request to Slipstream
+            // SOCKS5 CONNECT request to Dante
             val connectReq = byteArrayOf(0x05, 0x01, 0x00) + rawAddr + portBytes
             remoteOutput.write(connectReq)
             remoteOutput.flush()
@@ -729,11 +592,9 @@ object SlipstreamSocksBridge {
             remoteInput.readFully(connRespHeader)
 
             if (connRespHeader[1] != 0x00.toByte()) {
-                logd("CONNECT: Slipstream rejected to $destHost:$destPort (rep=${connRespHeader[1]})")
-                if (sendReply) {
-                    clientOutput.write(byteArrayOf(0x05, connRespHeader[1], 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-                    clientOutput.flush()
-                }
+                logd("CONNECT: Dante rejected to $destHost:$destPort (rep=${connRespHeader[1]})")
+                clientOutput.write(byteArrayOf(0x05, connRespHeader[1], 0x00, 0x01, 0, 0, 0, 0, 0, 0))
+                clientOutput.flush()
                 remoteSocket.close()
                 return
             }
@@ -745,13 +606,11 @@ object SlipstreamSocksBridge {
                 0x04 -> { val rest = ByteArray(18); remoteInput.readFully(rest) }
             }
 
-            logd("CONNECT: $destHost:$destPort OK (via Slipstream)")
+            logd("CONNECT: $destHost:$destPort OK (via DNSTT)")
 
-            // Send success to hev-socks5-tunnel (if not already sent)
-            if (sendReply) {
-                clientOutput.write(byteArrayOf(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-                clientOutput.flush()
-            }
+            // Send success to hev-socks5-tunnel
+            clientOutput.write(byteArrayOf(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
+            clientOutput.flush()
 
             clientSocket.soTimeout = 0
 
@@ -764,7 +623,7 @@ object SlipstreamSocksBridge {
                     } finally {
                         try { remoteOutput.close() } catch (_: Exception) {}
                     }
-                }, "slip-bridge-c2s")
+                }, "dnstt-bridge-c2s")
                 t1.isDaemon = true
                 t1.start()
 
@@ -779,46 +638,17 @@ object SlipstreamSocksBridge {
             }
         } catch (e: Exception) {
             logd("CONNECT: chain error for $destHost:$destPort: ${e.message}")
-            if (sendReply) {
-                try {
-                    clientOutput.write(byteArrayOf(0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-                    clientOutput.flush()
-                } catch (_: Exception) {}
-            }
+            try {
+                clientOutput.write(byteArrayOf(0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
+                clientOutput.flush()
+            } catch (_: Exception) {}
             try { remoteSocket.close() } catch (_: Exception) {}
             remoteSockets.remove(remoteSocket)
         }
     }
 
-    private fun bridgeDirect(clientInput: InputStream, clientOutput: OutputStream, directSocket: Socket) {
-        directSocket.use { remote ->
-            remote.tcpNoDelay = true
-            val remoteInput = remote.getInputStream()
-            val remoteOutput = remote.getOutputStream()
-
-            val t1 = Thread({
-                try {
-                    copyStream(clientInput, remoteOutput)
-                } catch (_: Exception) {
-                } finally {
-                    try { remoteOutput.close() } catch (_: Exception) {}
-                }
-            }, "slip-bridge-direct-c2s")
-            t1.isDaemon = true
-            t1.start()
-
-            try {
-                copyStream(remoteInput, clientOutput)
-            } catch (_: Exception) {
-            } finally {
-                try { remote.close() } catch (_: Exception) {}
-                t1.interrupt()
-            }
-        }
-    }
-
     /**
-     * Handle FWD_UDP (cmd 0x05) — same wire format as SshTunnelBridge/DohBridge.
+     * Handle FWD_UDP (cmd 0x05) — same wire format as SshTunnelBridge/SlipstreamSocksBridge.
      * DNS (port 53): through persistent worker pool, DoH fallback.
      * Non-DNS UDP: dropped silently (browser falls back to TCP CONNECT).
      */
@@ -859,7 +689,7 @@ object SlipstreamSocksBridge {
                     forwardDnsPooled(payload)
                 } else {
                     // Non-DNS UDP (QUIC, etc.): drop silently.
-                    // Browser falls back to TCP → CONNECT through Slipstream.
+                    // Browser falls back to TCP → CONNECT through DNSTT.
                     null
                 }
 
@@ -885,14 +715,14 @@ object SlipstreamSocksBridge {
     }
 
     /**
-     * One-shot DNS-over-TCP through a new Slipstream connection (Phase 3 fallback).
+     * One-shot DNS-over-TCP through a new DNSTT connection (Phase 3 fallback).
      * Used when all persistent workers are dead and recreation failed.
      */
     private fun forwardDnsTcpOneShot(payload: ByteArray): ByteArray? {
         var sock: Socket? = null
         try {
             sock = Socket()
-            sock.connect(InetSocketAddress(slipstreamHost, slipstreamPort), TCP_CONNECT_TIMEOUT_MS)
+            sock.connect(InetSocketAddress(dnsttHost, dnsttPort), TCP_CONNECT_TIMEOUT_MS)
             sock.soTimeout = DNS_WORKER_TIMEOUT_MS
             sock.tcpNoDelay = true
 
@@ -942,31 +772,23 @@ object SlipstreamSocksBridge {
     }
 
     /**
-     * Forward DNS query via DoH (DNS-over-HTTPS) through Slipstream → Dante tunnel.
+     * Forward DNS query via DoH (DNS-over-HTTPS) through DNSTT → Dante tunnel.
      * Fallback when DNS-over-TCP fails. Uses Cloudflare DoH (1.1.1.1).
-     *
-     * 1. SOCKS5 CONNECT to Cloudflare DoH (1.1.1.1:443) through Dante
-     * 2. TLS handshake
-     * 3. HTTP POST with DNS payload (RFC 8484)
-     * 4. Parse HTTP response to extract DNS answer
-     *
-     * @param payload DNS query payload (raw UDP DNS packet)
-     * @return DNS response payload, or null on failure
      */
     private fun forwardDnsDoH(payload: ByteArray): ByteArray? {
         var rawSocket: Socket? = null
         var sslSocket: SSLSocket? = null
         try {
-            // Step 1: Connect to Slipstream (loopback)
+            // Step 1: Connect to DNSTT (loopback)
             rawSocket = Socket()
-            rawSocket.connect(InetSocketAddress(slipstreamHost, slipstreamPort), TCP_CONNECT_TIMEOUT_MS)
+            rawSocket.connect(InetSocketAddress(dnsttHost, dnsttPort), TCP_CONNECT_TIMEOUT_MS)
             rawSocket.soTimeout = DNS_WORKER_TIMEOUT_MS
             rawSocket.tcpNoDelay = true
 
             val rawIn = rawSocket.getInputStream()
             val rawOut = rawSocket.getOutputStream()
 
-            // Step 2: SOCKS5 auth to Dante (through Slipstream tunnel)
+            // Step 2: SOCKS5 auth to Dante (through DNSTT tunnel)
             if (!performSocksAuth(rawIn, rawOut)) return null
 
             // Step 3: SOCKS5 CONNECT to Cloudflare DoH (1.1.1.1:443)
@@ -1066,10 +888,8 @@ object SlipstreamSocksBridge {
 
     /**
      * Read an HTTP response and extract the body (DNS response bytes).
-     * Reads headers line-by-line, parses Content-Length, then reads body.
      */
     private fun readDoHResponse(input: InputStream): ByteArray? {
-        // Read HTTP headers line by line
         val headerLines = mutableListOf<String>()
         val lineBuf = StringBuilder()
         var prevByte = -1
@@ -1079,7 +899,7 @@ object SlipstreamSocksBridge {
             if (prevByte == '\r'.code && b == '\n'.code) {
                 val line = lineBuf.toString()
                 lineBuf.clear()
-                if (line.isEmpty()) break // Empty line = end of headers
+                if (line.isEmpty()) break
                 headerLines.add(line)
             } else if (b != '\r'.code) {
                 lineBuf.append(b.toChar())
@@ -1094,7 +914,6 @@ object SlipstreamSocksBridge {
             return null
         }
 
-        // Parse Content-Length
         val contentLength = headerLines
             .find { it.startsWith("Content-Length:", ignoreCase = true) }
             ?.substringAfter(":")?.trim()?.toIntOrNull()
@@ -1104,7 +923,6 @@ object SlipstreamSocksBridge {
             input.readFully(body)
             body
         } else {
-            // Fallback: read until EOF (Connection: close)
             input.readBytes().takeIf { it.isNotEmpty() }
         }
     }
