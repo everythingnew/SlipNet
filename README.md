@@ -15,6 +15,7 @@ A fast, modern VPN client featuring DNS tunneling with support for multiple prot
 If you want to support development:
 
 - **BEP-20 / ERC-20 / Arbitrum**: `0xd4140058389572D50dC8716e768e687C050Dd5C9`
+- **Monero (XMR)**: `48wa9asF4AdZCq8KvPqBmqN3s98XFQ2MG7pL8MY6hAc6ZXBd8D61LArebdmAwCk5jBBbR2BuiHkSraEYFhx5AdDqLxDB4GU`
 
 ## Community
 
