@@ -22,3 +22,6 @@
 [submodule "vaydns-mobile"]
 	path = vaydns-mobile
 	url = https://github.com/anonvector/vaydns-mobile.git
+[submodule "MasterDnsVPN"]
+	path = MasterDnsVPN
+	url = https://github.com/everythingnew/MasterDnsVPN.git

@@ -14,8 +14,8 @@ import javax.inject.Singleton
  * Single profile format: slipnet://[base64-encoded-profile]
  * Multiple profiles: one URI per line
  *
- * Encoded profile format v24 (pipe-delimited):
- * v24|tunnelType|name|domain|resolvers|authMode|keepAlive|cc|port|host|gso|dnsttPublicKey|socksUsername|socksPassword|sshEnabled|sshUsername|sshPassword|sshPort|forwardDnsThroughSsh|sshHost|useServerDns|dohUrl|dnsTransport|sshAuthType|sshPrivateKey(b64)|sshKeyPassphrase(b64)|torBridgeLines(b64)|dnsttAuthoritative|naivePort|naiveUsername|naivePassword(b64)|isLocked|lockPasswordHash|expirationDate|allowSharing|boundDeviceId|resolversHidden|hiddenResolvers|noizdnsStealth|dnsPayloadSize|socks5ServerPort|vaydnsDnsttCompat|vaydnsRecordType|vaydnsMaxQnameLen|vaydnsRps|vaydnsIdleTimeout|vaydnsKeepalive|vaydnsUdpTimeout|vaydnsMaxNumLabels|vaydnsClientIdSize|sshTlsEnabled|sshTlsSni|sshHttpProxyHost|sshHttpProxyPort|sshHttpProxyCustomHost|sshWsEnabled|sshWsPath|sshWsUseTls|sshWsCustomHost|sshPayload(b64)|resolverMode|rrSpreadCount
+ * Encoded profile format v25 (pipe-delimited):
+ * v25|tunnelType|name|domain|resolvers|authMode|keepAlive|cc|port|host|gso|dnsttPublicKey|socksUsername|socksPassword|sshEnabled|sshUsername|sshPassword|sshPort|forwardDnsThroughSsh|sshHost|useServerDns|dohUrl|dnsTransport|sshAuthType|sshPrivateKey(b64)|sshKeyPassphrase(b64)|torBridgeLines(b64)|dnsttAuthoritative|naivePort|naiveUsername|naivePassword(b64)|isLocked|lockPasswordHash|expirationDate|allowSharing|boundDeviceId|resolversHidden|hiddenResolvers|noizdnsStealth|dnsPayloadSize|socks5ServerPort|vaydnsDnsttCompat|vaydnsRecordType|vaydnsMaxQnameLen|vaydnsRps|vaydnsIdleTimeout|vaydnsKeepalive|vaydnsUdpTimeout|vaydnsMaxNumLabels|vaydnsClientIdSize|sshTlsEnabled|sshTlsSni|sshHttpProxyHost|sshHttpProxyPort|sshHttpProxyCustomHost|sshWsEnabled|sshWsPath|sshWsUseTls|sshWsCustomHost|sshPayload(b64)|resolverMode|rrSpreadCount|masterdnsKey|masterdnsEncMethod
  *
  * Resolvers format (comma-separated): host:port:auth,host:port:auth
  */
@@ -25,7 +25,7 @@ class ConfigExporter @Inject constructor() {
     companion object {
         const val SCHEME = "slipnet://"
         const val ENCRYPTED_SCHEME = "slipnet-enc://"
-        const val VERSION = "24"
+        const val VERSION = "25"
         const val MODE_SLIPSTREAM = "ss"
         const val MODE_SLIPSTREAM_SSH = "slipstream_ssh"
         const val MODE_DNSTT = "dnstt"
@@ -40,6 +40,8 @@ class ConfigExporter @Inject constructor() {
         const val MODE_SOCKS5 = "socks5"
         const val MODE_VAYDNS = "vaydns"
         const val MODE_VAYDNS_SSH = "vaydns_ssh"
+        const val MODE_MASTERDNS = "masterdns"
+        const val MODE_MASTERDNS_SSH = "masterdns_ssh"
         private const val FIELD_DELIMITER = "|"
         private const val RESOLVER_DELIMITER = ","
         private const val RESOLVER_PART_DELIMITER = ":"
@@ -109,6 +111,8 @@ class ConfigExporter @Inject constructor() {
             TunnelType.SOCKS5 -> MODE_SOCKS5
             TunnelType.VAYDNS -> MODE_VAYDNS
             TunnelType.VAYDNS_SSH -> MODE_VAYDNS_SSH
+            TunnelType.MASTERDNS -> MODE_MASTERDNS
+            TunnelType.MASTERDNS_SSH -> MODE_MASTERDNS_SSH
         }
 
         // When hideResolvers is true, leave position 4 empty so old versions (v1-v16)
@@ -137,7 +141,7 @@ class ConfigExporter @Inject constructor() {
             sanitize(profile.dnsttPublicKey),
             sanitize(profile.socksUsername ?: ""),
             sanitize(profile.socksPassword ?: ""),
-            if (profile.tunnelType == TunnelType.SSH || profile.tunnelType == TunnelType.DNSTT_SSH || profile.tunnelType == TunnelType.SLIPSTREAM_SSH || profile.tunnelType == TunnelType.NAIVE_SSH || profile.tunnelType == TunnelType.VAYDNS_SSH) "1" else "0",
+            if (profile.tunnelType == TunnelType.SSH || profile.tunnelType == TunnelType.DNSTT_SSH || profile.tunnelType == TunnelType.SLIPSTREAM_SSH || profile.tunnelType == TunnelType.NAIVE_SSH || profile.tunnelType == TunnelType.VAYDNS_SSH || profile.tunnelType == TunnelType.MASTERDNS_SSH) "1" else "0",
             sanitize(profile.sshUsername),
             sanitize(profile.sshPassword),
             profile.sshPort.toString(),
@@ -189,7 +193,10 @@ class ConfigExporter @Inject constructor() {
             // v23: Multi-resolver mode
             profile.resolverMode.value,
             // v24: Round-robin spread count
-            profile.rrSpreadCount.toString()
+            profile.rrSpreadCount.toString(),
+            // v25: MasterDNS fields
+            sanitize(profile.masterdnsKey),
+            profile.masterdnsEncMethod.toString()
         ).joinToString(FIELD_DELIMITER)
     }
 

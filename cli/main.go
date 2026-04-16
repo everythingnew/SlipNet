@@ -53,29 +53,29 @@ type vaydnsCLIOverrides struct {
 
 // Profile fields (v18 pipe-delimited format)
 type Profile struct {
-	Version       string
-	TunnelType    string // "sayedns" = NoizDNS, "dnstt" = DNSTT, "ssh", "socks5", etc.
-	Name          string
-	Domain        string
-	Resolvers     string // e.g. "8.8.8.8:53:0"
-	AuthMode      bool
-	KeepAlive     int
-	CC            string // congestion control: bbr, dcubic
-	Port          int    // local SOCKS5 port
-	Host          string // local SOCKS5 host
-	GSO           bool
-	PublicKey     string
-	SOCKSUser     string
-	SOCKSPass     string
-	SSHEnabled    bool
-	SSHUser       string
-	SSHPass       string
-	SSHPort       int
-	SSHHost       string
-	DNSTransport    string // udp, tcp, tls (DoT), https (DoH)
-	DoHURL          string
-	NoizdnsStealth  bool   // config position 38
-	DnsPayloadSize  int    // config position 39 — max DNS query payload (0 = full capacity)
+	Version        string
+	TunnelType     string // "sayedns" = NoizDNS, "dnstt" = DNSTT, "ssh", "socks5", etc.
+	Name           string
+	Domain         string
+	Resolvers      string // e.g. "8.8.8.8:53:0"
+	AuthMode       bool
+	KeepAlive      int
+	CC             string // congestion control: bbr, dcubic
+	Port           int    // local SOCKS5 port
+	Host           string // local SOCKS5 host
+	GSO            bool
+	PublicKey      string
+	SOCKSUser      string
+	SOCKSPass      string
+	SSHEnabled     bool
+	SSHUser        string
+	SSHPass        string
+	SSHPort        int
+	SSHHost        string
+	DNSTransport   string // udp, tcp, tls (DoT), https (DoH)
+	DoHURL         string
+	NoizdnsStealth bool // config position 38
+	DnsPayloadSize int  // config position 39 — max DNS query payload (0 = full capacity)
 
 	// VayDNS-specific fields (config positions 41-49)
 	VaydnsDnsttCompat  bool
@@ -111,6 +111,10 @@ type Profile struct {
 
 	// Round-robin spread count (config position 61): how many resolvers per query in fast mode
 	RRSpreadCount int
+
+	// MasterDNS-specific fields (config positions 62-63)
+	MasterdnsKey       string
+	MasterdnsEncMethod int // 0=None 1=XOR 2=ChaCha20 3=AES-128 4=AES-192 5=AES-256
 
 	// Locked profile (config position 31)
 	IsLocked bool
@@ -293,6 +297,16 @@ func parseURI(uri string) (*Profile, error) {
 	if len(fields) > 61 {
 		if v, err := strconv.Atoi(fields[61]); err == nil && v >= 1 {
 			p.RRSpreadCount = v
+		}
+	}
+
+	// MasterDNS fields (positions 62-63)
+	if len(fields) > 62 && fields[62] != "" {
+		p.MasterdnsKey = fields[62]
+	}
+	if len(fields) > 63 {
+		if v, err := strconv.Atoi(fields[63]); err == nil {
+			p.MasterdnsEncMethod = v
 		}
 	}
 
@@ -573,6 +587,13 @@ func connectWithParams(uri string, portOverride int, hostOverride string, dnsOve
 		// DNSTT/NoizDNS — handled below via noizdns/mobile
 	case "vaydns", "vaydns_ssh":
 		// VayDNS — handled below via vaydns-mobile/vaydns
+	case "masterdns", "masterdns_ssh":
+		// MasterDNS — handled below via masterdnsvpn-go/mobile
+		if portOverride > 0 {
+			profile.Port = portOverride
+		}
+		connectMasterdns(profile)
+		return
 	case "ssh", "direct_ssh":
 		if portOverride > 0 {
 			profile.Port = portOverride
@@ -1215,16 +1236,16 @@ func runScanCommand(args []string) {
 		if e2eEnabled {
 			prismE2E = &E2EConfig{
 				TunnelDomain: domain,
-				PublicKey:     pubkey,
-				NoizMode:      noizdns,
-				VaydnsMode:    vaydnsMode,
-				SSHMode:       sshMode,
-				TimeoutMs:     e2eTimeout,
-				Concurrency:   e2eConcurrency,
-				QuerySize:     querySize,
-				SOCKSUser:     socksUser,
-				SOCKSPass:     socksPass,
-				TestURL:       e2eURL,
+				PublicKey:    pubkey,
+				NoizMode:     noizdns,
+				VaydnsMode:   vaydnsMode,
+				SSHMode:      sshMode,
+				TimeoutMs:    e2eTimeout,
+				Concurrency:  e2eConcurrency,
+				QuerySize:    querySize,
+				SOCKSUser:    socksUser,
+				SOCKSPass:    socksPass,
+				TestURL:      e2eURL,
 			}
 		}
 		RunVerifyScanner(resolvers, domain, port, prismTimeoutMs, concurrency, verifyRounds, passThreshold, pubkeyBytes, responseSize, prismPrefilter, prismE2E, outputFile)
@@ -1238,16 +1259,16 @@ func runScanCommand(args []string) {
 		}
 		e2eOnlyConfig := E2EConfig{
 			TunnelDomain: domain,
-			PublicKey:     pubkey,
-			NoizMode:      noizdns,
-			VaydnsMode:    vaydnsMode,
-			SSHMode:       sshMode,
-			TimeoutMs:     e2eTimeout,
-			Concurrency:   e2eConcurrency,
-			QuerySize:     querySize,
-			SOCKSUser:     socksUser,
-			SOCKSPass:     socksPass,
-			TestURL:       e2eURL,
+			PublicKey:    pubkey,
+			NoizMode:     noizdns,
+			VaydnsMode:   vaydnsMode,
+			SSHMode:      sshMode,
+			TimeoutMs:    e2eTimeout,
+			Concurrency:  e2eConcurrency,
+			QuerySize:    querySize,
+			SOCKSUser:    socksUser,
+			SOCKSPass:    socksPass,
+			TestURL:      e2eURL,
 		}
 		RunE2EOnlyScanner(resolvers, e2eOnlyConfig, outputFile)
 		return
@@ -1261,17 +1282,17 @@ func runScanCommand(args []string) {
 		}
 		e2eConfig = &E2EConfig{
 			TunnelDomain:   domain,
-			PublicKey:       pubkey,
-			NoizMode:        noizdns,
-			VaydnsMode:      vaydnsMode,
-			SSHMode:         sshMode,
-			TimeoutMs:       e2eTimeout,
-			Concurrency:     e2eConcurrency,
-			QuerySize:       querySize,
-			ScoreThreshold:  e2eThreshold,
-			SOCKSUser:       socksUser,
-			TestURL:         e2eURL,
-			SOCKSPass:       socksPass,
+			PublicKey:      pubkey,
+			NoizMode:       noizdns,
+			VaydnsMode:     vaydnsMode,
+			SSHMode:        sshMode,
+			TimeoutMs:      e2eTimeout,
+			Concurrency:    e2eConcurrency,
+			QuerySize:      querySize,
+			ScoreThreshold: e2eThreshold,
+			SOCKSUser:      socksUser,
+			TestURL:        e2eURL,
+			SOCKSPass:      socksPass,
 		}
 	}
 

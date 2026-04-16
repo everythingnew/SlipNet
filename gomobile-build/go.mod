@@ -4,6 +4,7 @@ go 1.24.4
 
 require (
 	golang.org/x/mobile v0.0.0-20260204172633-1dceadbbeea3
+	masterdnsvpn-go v0.0.0
 	noizdns v0.0.0
 	snowflake-mobile v0.0.0
 	vaydns-mobile v0.0.0-00010101000000-000000000000
@@ -26,15 +27,17 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.9 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.1 // indirect
 	github.com/aws/smithy-go v1.23.2 // indirect
+	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/golang/mock v1.7.0-rc.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/klauspost/compress v1.18.3 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/reedsolomon v1.13.0 // indirect
 	github.com/miekg/dns v1.1.65 // indirect
 	github.com/net2share/vaydns v0.0.0-00010101000000-000000000000 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
+	github.com/pierrec/lz4/v4 v4.1.26 // indirect
 	github.com/pion/datachannel v1.6.0 // indirect
 	github.com/pion/dtls/v3 v3.0.11 // indirect
 	github.com/pion/ice/v4 v4.2.0 // indirect
@@ -65,11 +68,11 @@ require (
 	gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib v1.6.0 // indirect
 	gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/ptutil v0.0.0-20250815012447-418f76dcf315 // indirect
 	gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/snowflake/v2 v2.12.1 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
+	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
@@ -80,6 +83,7 @@ replace (
 	dnstt-mobile => ../dnstt-mobile
 	github.com/net2share/vaydns => ../vaydns
 	github.com/xtaci/kcp-go/v5 => github.com/net2share/kcp-go/v5 v5.0.0-20260325165956-416ba9d3856d
+	masterdnsvpn-go => ../MasterDnsVPN
 	noizdns => ../noizdns
 	snowflake-mobile => ../snowflake-mobile
 	vaydns-mobile => ../vaydns-mobile

@@ -112,7 +112,11 @@ data class ServerProfile(
     // Multi-resolver mode: "fanout" (reliable, send to all) or "roundrobin" (fast, bandwidth aggregation)
     val resolverMode: ResolverMode = ResolverMode.ROUND_ROBIN,
     // Round-robin spread count: how many resolvers each query is sent to in fast mode (1=no duplicates, default 3)
-    val rrSpreadCount: Int = 3
+    val rrSpreadCount: Int = 3,
+    // MasterDNS: shared encryption key (required)
+    val masterdnsKey: String = "",
+    // MasterDNS: data encryption method (0=None 1=XOR 2=ChaCha20 3=AES-128 4=AES-192 5=AES-256)
+    val masterdnsEncMethod: Int = 2
 ) {
     val isExpired: Boolean get() = expirationDate > 0 && System.currentTimeMillis() > expirationDate
 }
@@ -148,7 +152,9 @@ enum class TunnelType(val value: String, val displayName: String) {
     NAIVE("naive", "NaiveProxy"),
     SOCKS5("socks5", "SOCKS5 Proxy"),
     VAYDNS("vaydns", "VayDNS"),
-    VAYDNS_SSH("vaydns_ssh", "VayDNS + SSH");
+    VAYDNS_SSH("vaydns_ssh", "VayDNS + SSH"),
+    MASTERDNS("masterdns", "MasterDNS"),
+    MASTERDNS_SSH("masterdns_ssh", "MasterDNS + SSH");
 
     companion object {
         fun fromValue(value: String): TunnelType {

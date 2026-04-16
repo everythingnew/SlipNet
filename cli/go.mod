@@ -1,9 +1,10 @@
 module slipnet-cli
 
-go 1.24.4
+go 1.25.0
 
 require (
 	golang.org/x/net v0.49.0
+	masterdnsvpn-go v0.0.0
 	noizdns v0.0.0
 	vaydns-mobile v0.0.0-00010101000000-000000000000
 )
@@ -32,6 +33,7 @@ require (
 replace (
 	github.com/net2share/vaydns => ../vaydns
 	github.com/xtaci/kcp-go/v5 => github.com/net2share/kcp-go/v5 v5.0.0-20260325165956-416ba9d3856d
+	masterdnsvpn-go => ../MasterDnsVPN
 	noizdns => ../noizdns
 	vaydns-mobile => ../vaydns-mobile
 	www.bamsoftware.com/git/dnstt.git => ../dnstt

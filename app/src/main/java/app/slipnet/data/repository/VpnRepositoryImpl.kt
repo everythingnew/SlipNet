@@ -12,6 +12,7 @@ import app.slipnet.domain.model.TunnelType
 import app.slipnet.domain.repository.VpnRepository
 import app.slipnet.tunnel.DnsDoHProxy
 import app.slipnet.tunnel.DnsttBridge
+import app.slipnet.tunnel.MasterdnsBridge
 import app.slipnet.tunnel.VaydnsBridge
 import app.slipnet.tunnel.DohBridge
 import app.slipnet.tunnel.HevSocks5Tunnel
@@ -408,9 +409,45 @@ class VpnRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Start the DoH SOCKS5 proxy. Call this AFTER establishing the VPN interface.
-     * DNS queries are encrypted via HTTPS; all other traffic flows directly.
+     * Start the MasterDNS SOCKS5 proxy. Similar to VayDNS but uses the MasterDnsVPN
+     * ARQ tunnel implementation for DNS tunnelling.
      */
+    suspend fun startMasterdnsProxy(
+        profile: ServerProfile,
+        portOverride: Int? = null,
+        hostOverride: String? = null,
+        resolverOverride: List<DnsResolver>? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        connectedProfile = profile
+
+        // MasterDNS resolvers are plain IPs, one per line
+        val effectiveResolvers = resolverOverride ?: profile.resolvers
+        val resolversText = effectiveResolvers.joinToString("\n") { resolveHost(it.host) }
+
+        val proxyPort = portOverride ?: preferencesDataStore.proxyListenPort.first()
+        val proxyHost = hostOverride ?: preferencesDataStore.proxyListenAddress.first()
+
+        val result = MasterdnsBridge.startClient(
+            domains = profile.domain,
+            encryptionKey = profile.masterdnsKey,
+            encryptionMethod = profile.masterdnsEncMethod,
+            resolversText = resolversText,
+            listenPort = proxyPort,
+            listenHost = proxyHost
+        )
+
+        if (result.isSuccess) {
+            Log.i(TAG, "MasterDNS SOCKS5 proxy started successfully")
+            currentTunnelType = TunnelType.MASTERDNS
+            Result.success(Unit)
+        } else {
+            val error = result.exceptionOrNull()?.message ?: "Failed to start MasterDNS proxy"
+            connectedProfile = null
+            Log.e(TAG, "Failed to start MasterDNS proxy: $error")
+            Result.failure(Exception(error))
+        }
+    }
+
     /**
      * Format the DNS server address string for the Go bridge, resolving any
      * domain names to numeric IPs (Go on Android cannot resolve hostnames).
@@ -745,6 +782,17 @@ class VpnRepositoryImpl @Inject constructor(
                 VaydnsBridge.stopClient()
                 DnsDoHProxy.stop()
             }
+            TunnelType.MASTERDNS -> {
+                Log.d(TAG, "Stopping MasterDNS proxy")
+                MasterdnsBridge.stopClient()
+                DnsDoHProxy.stop()
+            }
+            TunnelType.MASTERDNS_SSH -> {
+                Log.d(TAG, "Stopping MasterDNS+SSH: SSH first, then MasterDNS")
+                SshTunnelBridge.stop()
+                MasterdnsBridge.stopClient()
+                DnsDoHProxy.stop()
+            }
             TunnelType.SLIPSTREAM_SSH -> {
                 Log.d(TAG, "Stopping Slipstream+SSH: SSH first, then Slipstream")
                 SshTunnelBridge.stop()
@@ -780,6 +828,7 @@ class VpnRepositoryImpl @Inject constructor(
                 SlipstreamBridge.stopClient()
                 DnsttBridge.stopClient()
                 VaydnsBridge.stopClient()
+                MasterdnsBridge.stopClient()
                 SshTunnelBridge.stop()
                 DnsDoHProxy.stop()
                 TorSocksBridge.stop()

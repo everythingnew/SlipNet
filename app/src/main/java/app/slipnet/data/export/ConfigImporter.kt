@@ -106,6 +106,8 @@ class ConfigImporter @Inject constructor() {
         private const val MODE_SOCKS5 = "socks5"
         private const val MODE_VAYDNS = "vaydns"
         private const val MODE_VAYDNS_SSH = "vaydns_ssh"
+        private const val MODE_MASTERDNS = "masterdns"
+        private const val MODE_MASTERDNS_SSH = "masterdns_ssh"
         private const val FIELD_DELIMITER = "|"
         private const val RESOLVER_DELIMITER = ","
         private const val RESOLVER_PART_DELIMITER = ":"
@@ -127,7 +129,7 @@ class ConfigImporter @Inject constructor() {
         private const val V16_FIELD_COUNT = 36
         private const val V17_FIELD_COUNT = 38
         private const val V18_FIELD_COUNT = 41
-        private const val CURRENT_MAX_VERSION = 24
+        private const val CURRENT_MAX_VERSION = 25
     }
 
     fun parseAndImport(input: String, localDeviceId: String = ""): ImportResult {
@@ -261,12 +263,13 @@ class ConfigImporter @Inject constructor() {
             "22" -> parseProfileV22(fields, lineNum)
             "23" -> parseProfileV23(fields, lineNum)
             "24" -> parseProfileV24(fields, lineNum)
+            "25" -> parseProfileV25(fields, lineNum)
             else -> {
                 // Forward compatibility: try the highest known parser for newer versions.
                 // Extra trailing fields are safely ignored (parsers only check minimum count).
                 val versionNum = version.toIntOrNull()
-                if (versionNum != null && versionNum > 24) {
-                    parseProfileV24(fields, lineNum)
+                if (versionNum != null && versionNum > 25) {
+                    parseProfileV25(fields, lineNum)
                 } else {
                     ProfileParseResult.Error("Line $lineNum: Unsupported version '$version'")
                 }
@@ -353,6 +356,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -439,6 +444,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -530,6 +537,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -624,6 +633,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -730,6 +741,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -836,6 +849,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -938,6 +953,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -1051,6 +1068,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -1185,6 +1204,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -1321,6 +1342,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -1464,6 +1487,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -1608,6 +1633,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -1769,6 +1796,8 @@ class ConfigImporter @Inject constructor() {
             MODE_SOCKS5 -> TunnelType.SOCKS5
             MODE_VAYDNS -> TunnelType.VAYDNS
             MODE_VAYDNS_SSH -> TunnelType.VAYDNS_SSH
+            MODE_MASTERDNS -> TunnelType.MASTERDNS
+            MODE_MASTERDNS_SSH -> TunnelType.MASTERDNS_SSH
 
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
@@ -2111,6 +2140,24 @@ class ConfigImporter @Inject constructor() {
 
         val profile = baseResult.profile.copy(
             rrSpreadCount = rrSpreadCount
+        )
+
+        return ProfileParseResult.Success(profile)
+    }
+
+    private fun parseProfileV25(fields: List<String>, lineNum: Int): ProfileParseResult {
+        // v25 extends v24 with MasterDNS fields
+        val baseResult = parseProfileV24(fields, lineNum)
+        if (baseResult !is ProfileParseResult.Success) return baseResult
+
+        // MasterDNS key (position 62)
+        val masterdnsKey = if (fields.size > 62) fields[62] else ""
+        // MasterDNS encryption method (position 63): 0=None 1=XOR 2=ChaCha20 3=AES-128 4=AES-192 5=AES-256
+        val masterdnsEncMethod = if (fields.size > 63) fields[63].toIntOrNull() ?: 2 else 2
+
+        val profile = baseResult.profile.copy(
+            masterdnsKey = masterdnsKey,
+            masterdnsEncMethod = masterdnsEncMethod
         )
 
         return ProfileParseResult.Success(profile)

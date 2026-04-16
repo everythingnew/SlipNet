@@ -4,6 +4,7 @@ package tools
 
 import (
 	_ "golang.org/x/mobile/bind"
+	_ "masterdnsvpn-go/mobile"
 	_ "noizdns/mobile"
 	_ "snowflake-mobile/snowflake"
 	_ "vaydns-mobile/vaydns"
